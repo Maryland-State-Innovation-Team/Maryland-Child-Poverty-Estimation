@@ -47,3 +47,9 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Environment
+.env
+
+# Too big for git
+large_input
