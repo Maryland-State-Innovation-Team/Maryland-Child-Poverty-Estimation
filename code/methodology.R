@@ -306,8 +306,180 @@ sqrt(mean((dp03_tracts$DP03_0129PE - dp03_tracts$child_pov_pct)^2, na.rm=T))
 sqrt(mean((dp03_tracts$DP03_0129PM - dp03_tracts$child_pov_pct_moe)^2, na.rm=T))
 
 # Higher level aggregate substitutions
-acs$high_child_pov_pct_moe = acs$child_pov_pct < acs$child_pov_pct_moe * 0.5 
-acs$high_pov_pct_moe = acs$pov_pct < acs$pov_pct_moe * 0.5 
 
-View(table(acs$geography, acs$high_child_pov_pct_moe))
-View(table(acs$geography, acs$high_pov_pct_moe))
+# Create crosswalks
+puma_crosswalk = fread("input/2020_Census_Tract_to_2020_PUMA.txt")
+puma_crosswalk$tract_geoid = paste0(
+  str_pad(puma_crosswalk$STATEFP, 2, pad="0"),
+  str_pad(puma_crosswalk$COUNTYFP, 3, pad="0"),
+  str_pad(puma_crosswalk$TRACTCE, 6, pad="0")
+)
+puma_crosswalk$puma_geoid = paste0(
+  str_pad(puma_crosswalk$STATEFP, 2, pad="0"),
+  str_pad(puma_crosswalk$PUMA5CE, 5, pad="0")
+)
+puma_crosswalk$county_geoid = paste0(
+  str_pad(puma_crosswalk$STATEFP, 2, pad="0"),
+  str_pad(puma_crosswalk$COUNTYFP, 3, pad="0")
+)
+county_crosswalk = unique(puma_crosswalk[,c("county_geoid", "tract_geoid")])
+county_crosswalk_map = county_crosswalk$county_geoid
+names(county_crosswalk_map) = county_crosswalk$tract_geoid
+puma_crosswalk_map = puma_crosswalk$puma_geoid
+names(puma_crosswalk_map) = puma_crosswalk$tract_geoid
+puma_crosswalk = puma_crosswalk[,c("puma_geoid", "tract_geoid")]
+
+# Load geometries
+puma_geometry = st_read("input/pumas/Maryland_pumas_4326.shp")
+puma_geometry = st_transform(puma_geometry, 3857)
+puma_geometry$area = st_area(puma_geometry)
+county_geometry = st_read("input/counties/Maryland_Physical_Boundaries_-_County_Boundaries_(Generalized).shp")
+county_geometry$area = st_area(county_geometry)
+county_geometry$GEOID = paste0(
+  "24",
+  str_pad(county_geometry$county_fip, 3, pad="0")
+)
+
+acs$high_child_pov_pct_moe = acs$child_pov_pct < acs$child_pov_pct_moe * 0.5
+acs$high_child_pov_pct_moe[which(is.na(acs$high_child_pov_pct_moe))] = F
+acs$high_pov_pct_moe = acs$pov_pct < acs$pov_pct_moe * 0.5 
+acs$high_pov_pct_moe[which(is.na(acs$high_pov_pct_moe))] = F
+
+acs = data.frame(acs)
+
+acs_tract = subset(acs, geography=="tract")
+acs_puma = subset(acs, geography=="puma")
+acs_county = subset(acs, geography=="county")
+acs_state = subset(acs, geography=="state")
+
+acs_tract$total_poverty_geography = "tract"
+acs_tract$child_poverty_geography = "tract"
+acs_tract$geography = NULL
+
+acs_puma$total_poverty_geography = "puma"
+acs_puma$child_poverty_geography = "puma"
+acs_puma$geography = NULL
+
+acs_county$total_poverty_geography = "county"
+acs_county$child_poverty_geography = "county"
+acs_county$geography = NULL
+
+acs_state$total_poverty_geography = "state"
+acs_state$child_poverty_geography = "state"
+acs_state$geography = NULL
+
+# For every census tract
+child_substitution_columns = c(
+  "child_pov_pct",
+  "child_pov_pct_moe",
+  "child_poverty_geography"
+)
+total_substitution_columns = c(
+  "pov_pct",
+  "pov_pct_moe",
+  "total_poverty_geography"
+)
+
+find_substitute_data = function(tract_row, moe_column_name, geo_hierarchy, geo_datasets, geo_ids) {
+  # Iterate through the geographic levels in the specified order
+  for (geo_level in geo_hierarchy) {
+    
+    # Get the dataset and GEOID for the current level
+    dataset = geo_datasets[[geo_level]]
+    geoid = geo_ids[[geo_level]]
+    
+    # Find a candidate row in the current geographic dataset that matches
+    # the demographic profile but does NOT have a high margin of error.
+    candidate_row = subset(
+      dataset,
+      GEOID == geoid &
+        race_ethnicity == tract_row$race_ethnicity &
+        sex == tract_row$sex &
+        !get(moe_column_name) # Safely get the column value by its string name
+    )
+    
+    # If a valid substitute is found (with low MOE), return it immediately.
+    if (nrow(candidate_row) > 0) {
+      # Implicitly take the first matching row if there are multiple.
+      return(candidate_row[1,])
+    }
+  }
+  
+  # If the loop completes without finding any valid substitute, return NULL.
+  return(NULL)
+}
+
+
+# A named list of all geographic datasets for easy access in the helper function
+geo_datasets = list(
+  puma = acs_puma,
+  county = acs_county,
+  state = acs_state
+)
+
+pb = txtProgressBar(min = 0, max = nrow(acs_tract), style = 3)
+
+for (i in 1:nrow(acs_tract)) {
+  
+  tract = acs_tract[i,]
+  
+  # Get GEOIDs for the corresponding PUMA and county
+  puma_geoid = puma_crosswalk_map[tract$GEOID]
+  county_geoid = county_crosswalk_map[tract$GEOID]
+  
+  # Create a named list of all relevant GEOIDs for this tract
+  geo_ids = list(
+    puma = puma_geoid,
+    county = county_geoid,
+    state = "24" # Hardcoded
+  )
+  
+  # Determine the search order: try the smaller geographic area first
+  puma_area = subset(puma_geometry, GEOID == puma_geoid)$area
+  county_area = subset(county_geometry, GEOID == county_geoid)$area
+  
+  geo_hierarchy = if (puma_area > county_area) {
+    # If PUMA is larger, try County first, then PUMA, then State
+    c("county", "puma", "state")
+  } else {
+    # Otherwise, try PUMA first, then County, then State
+    c("puma", "county", "state")
+  }
+  
+  if (tract$high_child_pov_pct_moe) {
+    substitute_row = find_substitute_data(
+      tract_row       = tract,
+      moe_column_name = "high_child_pov_pct_moe",
+      geo_hierarchy   = geo_hierarchy,
+      geo_datasets    = geo_datasets,
+      geo_ids         = geo_ids
+    )
+    
+    # If the helper function found a valid substitute, update the columns
+    if (!is.null(substitute_row)) {
+      acs_tract[i, child_substitution_columns] = substitute_row[, child_substitution_columns]
+    }
+  }
+
+  if (tract$high_pov_pct_moe) {
+    substitute_row = find_substitute_data(
+      tract_row       = tract,
+      moe_column_name = "high_pov_pct_moe",
+      geo_hierarchy   = geo_hierarchy,
+      geo_datasets    = geo_datasets,
+      geo_ids         = geo_ids
+    )
+    
+    # If the helper function found a valid substitute, update the columns
+    if (!is.null(substitute_row)) {
+      acs_tract[i, total_substitution_columns] = substitute_row[, total_substitution_columns]
+    }
+  }
+  
+  setTxtProgressBar(pb, i)
+}
+close(pb)
+
+fwrite(acs_tract, "output/acs_5year_2023_geosubstitution.csv")
+View(table(acs_tract$child_poverty_geography))
+View(table(subset(acs_tract, race_ethnicity=="total" & sex=="total")$child_poverty_geography))
