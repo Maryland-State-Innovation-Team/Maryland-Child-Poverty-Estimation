@@ -168,6 +168,43 @@ if(!file.exists("input/acs_child_pov_B17001_2018_2023.RData")){
   load("input/acs_child_pov_B17001_2018_2023.RData")
 }
 
+# Crosswalk 2010 tracts to 2020
+source("code/util_nhgis_census_crosswalk.R")
+acs_2010_tracts = subset(acs_long_tract_all, year<=2019)
+original_pop = sum(acs_2010_tracts$estimate)
+acs_2020_tracts = subset(acs_long_tract_all, year>2019)
+acs_2020_tract_names = unique(acs_2020_tracts[,c("GEOID","NAME")])
+acs_2020_tract_names = acs_2020_tract_names[,.(NAME=first(NAME)), by=.(GEOID)]
+
+acs_2010_tracts_crosswalked = acs_2010_tracts %>% nhgis_crosswalk(
+  start_year=2010,
+  end_year=2020,
+  GEOID_col="GEOID",
+  value_cols=c("estimate", "moe"),
+  states = c(
+    "24" # MD
+  )
+)
+acs_2010_tracts_crosswalked$GEOID = acs_2010_tracts_crosswalked$end_GEOID
+acs_2010_tracts_crosswalked = subset(acs_2010_tracts_crosswalked, !is.na(GEOID))
+acs_2010_tracts_crosswalked = acs_2010_tracts_crosswalked[,
+  .(
+    estimate=sum(crosswalk_estimate, na.rm=T),
+    moe=rss(crosswalk_moe, na.rm=T)
+  ),
+  by = .(GEOID, year, variable)
+]
+acs_2010_tracts_crosswalked = merge(acs_2010_tracts_crosswalked, acs_2020_tract_names, by="GEOID")
+new_pop = sum(acs_2010_tracts_crosswalked$estimate)
+stopifnot(
+  {
+    (original_pop - new_pop) == 0
+  }
+)
+setdiff(unique(acs_2010_tracts_crosswalked$GEOID), unique(acs_2020_tracts$GEOID))
+
+acs_long_tract_all = rbindlist(list(acs_2010_tracts_crosswalked, acs_2020_tracts), fill=T)
+
 acs_long_tract_all = subset(acs_long_tract_all, str_count(acs_long_tract_all$variable, pattern="_")==3)
 acs_long_tract_all$poverty = str_split_i(acs_long_tract_all$variable, pattern="_", i=1)
 acs_long_tract_all$sex = str_split_i(acs_long_tract_all$variable, pattern="_", i=2)
