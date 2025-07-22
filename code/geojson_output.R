@@ -51,9 +51,9 @@ dp03_tracts$child_pov_pct_cv[which(is.infinite(dp03_tracts$child_pov_pct_cv))] =
 
 dp03_tracts$`THRESH-child_pov_pct` = dp03_tracts$DP03_0129PE
 dp03_tracts$`THRESH-child_pov_pct`[which(
-  (dp03_tracts$DP03_0129PE < 0.5 * dp03_tracts$DP03_0129PM) & dp03_tracts$DP03_0129PE > 0
+  dp03_tracts$DP03_0129PE < 0.5 * dp03_tracts$DP03_0129PM
 )] = (0.5 * dp03_tracts$DP03_0129PM)[which(
-  (dp03_tracts$DP03_0129PE < 0.5 * dp03_tracts$DP03_0129PM) & dp03_tracts$DP03_0129PE > 0
+  dp03_tracts$DP03_0129PE < 0.5 * dp03_tracts$DP03_0129PM
 )]
 
 dp03_tracts$`THRESH-child_pov_pct_cv` = dp03_tracts$child_pov_pct_cv
