@@ -9,6 +9,7 @@ setwd("C:/git/Maryland-Child-Poverty-Estimation/")
 
 acs_tract = fread("output/acs_5year_2023_geosubstitution.csv")
 acs_tract = subset(acs_tract, sex=="total" & race_ethnicity=="total")
+sum(acs_tract$child_poverty_geography != "tract")
 
 acs_tract_year = fread("output/acs_5year_2023_yearsubstitution.csv")
 acs_tract_year = subset(acs_tract_year, sex=="total" & race_ethnicity=="total")
@@ -31,12 +32,15 @@ dp03_tracts$child_pov_pct_moe = dp03_tracts$child_pov_pct_moe * 100
 dp03_tracts$child_pov_pct_year = dp03_tracts$child_pov_pct_year * 100
 dp03_tracts$DP03_0129PE = as.numeric(dp03_tracts$DP03_0129PE)
 dp03_tracts$DP03_0129PM = as.numeric(dp03_tracts$DP03_0129PM)
+sum(dp03_tracts$DP03_0129PE==0, na.rm=T)
+sum(is.na(dp03_tracts$DP03_0129PE))
 
+# Can't exclude exact zeroes here because Census has already performed suppression
 dp03_tracts$half_moe_threshold = dp03_tracts$DP03_0129PE
 dp03_tracts$half_moe_threshold[which(
-  (dp03_tracts$half_moe_threshold < 0.5 * dp03_tracts$DP03_0129PM) & dp03_tracts$DP03_0129PE > 0
+  dp03_tracts$half_moe_threshold < 0.5 * dp03_tracts$DP03_0129PM
 )] = (0.5 * dp03_tracts$DP03_0129PM)[which(
-  (dp03_tracts$half_moe_threshold < 0.5 * dp03_tracts$DP03_0129PM) & dp03_tracts$DP03_0129PE > 0
+  dp03_tracts$half_moe_threshold < 0.5 * dp03_tracts$DP03_0129PM
 )]
 
 ggplot(dp03_tracts, aes(x=DP03_0129PE, y=child_pov_pct)) +
@@ -76,9 +80,9 @@ mean(dp03_tracts$child_pov_pct_year - dp03_tracts$DP03_0129PE, na.rm=T)
 # Average of 0.62% higher than DP03
 
 sum(round(dp03_tracts$half_moe_threshold) > round(dp03_tracts$DP03_0129PE), na.rm=T)
-# 11 tracts with higher child poverty rates by 1/2 MOE adjusted
+# 289 tracts with higher child poverty rates by 1/2 MOE adjusted
 sum(round(dp03_tracts$half_moe_threshold) < round(dp03_tracts$DP03_0129PE), na.rm=T)
 # 0 tracts with lower child poverty rates by 1/2 MOE adjusted
 mean(dp03_tracts$half_moe_threshold - dp03_tracts$DP03_0129PE, na.rm=T)
-# Average of 0.02% higher than DP03
+# Average of 0.77% higher than DP03
 
