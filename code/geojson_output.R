@@ -18,6 +18,7 @@ tracts = merge(tracts, tract_names, by.x="GEOID20", by.y="tract_geoid")
 acs_tract = fread("output/acs_5year_2023_geosubstitution.csv")
 acs_tract = subset(acs_tract, sex=="total" & race_ethnicity=="total")
 acs_tract$child_pov_pct_cv = (acs_tract$child_pov_pct_moe / 1.645) / acs_tract$child_pov_pct
+acs_tract$child_pov_pct_cv[which(is.infinite(acs_tract$child_pov_pct_cv))] = 0
 acs_tract = acs_tract[,c(
   "GEOID",
   "child_pov_pct",
@@ -30,6 +31,7 @@ names(acs_tract) = c("GEOID20", "GEO-child_pov_pct", "GEO-child_pov_pct_cv", "GE
 acs_tract_year = fread("output/acs_5year_2023_yearsubstitution.csv")
 acs_tract_year = subset(acs_tract_year, sex=="total" & race_ethnicity=="total")
 acs_tract_year$child_pov_pct_cv = (acs_tract_year$child_pov_pct_moe / 1.645) / acs_tract_year$child_pov_pct
+acs_tract_year$child_pov_pct_cv[which(is.infinite(acs_tract_year$child_pov_pct_cv))] = 0
 acs_tract_year = acs_tract_year[,c(
   "GEOID",
   "child_pov_pct",
