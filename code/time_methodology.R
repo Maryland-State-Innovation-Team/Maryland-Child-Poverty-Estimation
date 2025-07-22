@@ -298,9 +298,9 @@ fwrite(acs, "output/all_year_calculations.csv")
 
 # Only keep tracts for further analysis
 acs_tract = acs
-acs_tract$high_child_pov_pct_moe = acs_tract$child_pov_pct < acs_tract$child_pov_pct_moe * 0.5
+acs_tract$high_child_pov_pct_moe = (acs_tract$child_pov_pct < acs_tract$child_pov_pct_moe * 0.5) & acs_tract$child_pov_pct > 0
 acs_tract$high_child_pov_pct_moe[which(is.na(acs_tract$high_child_pov_pct_moe))] = F
-acs_tract$high_pov_pct_moe = acs_tract$pov_pct < acs_tract$pov_pct_moe * 0.5 
+acs_tract$high_pov_pct_moe = (acs_tract$pov_pct < acs_tract$pov_pct_moe * 0.5) & acs_tract$pov_pct > 0
 acs_tract$high_pov_pct_moe[which(is.na(acs_tract$high_pov_pct_moe))] = F
 acs_tract = data.frame(acs_tract)
 

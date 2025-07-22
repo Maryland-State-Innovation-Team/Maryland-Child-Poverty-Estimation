@@ -340,9 +340,9 @@ county_geometry$GEOID = paste0(
   str_pad(county_geometry$county_fip, 3, pad="0")
 )
 
-acs$high_child_pov_pct_moe = acs$child_pov_pct < acs$child_pov_pct_moe * 0.5
+acs$high_child_pov_pct_moe = (acs$child_pov_pct < acs$child_pov_pct_moe * 0.5) & acs$child_pov_pct > 0
 acs$high_child_pov_pct_moe[which(is.na(acs$high_child_pov_pct_moe))] = F
-acs$high_pov_pct_moe = acs$pov_pct < acs$pov_pct_moe * 0.5 
+acs$high_pov_pct_moe = (acs$pov_pct < acs$pov_pct_moe * 0.5) & acs$pov_pct > 0
 acs$high_pov_pct_moe[which(is.na(acs$high_pov_pct_moe))] = F
 
 acs = data.frame(acs)
