@@ -34,9 +34,9 @@ dp03_tracts$DP03_0129PM = as.numeric(dp03_tracts$DP03_0129PM)
 
 dp03_tracts$half_moe_threshold = dp03_tracts$DP03_0129PE
 dp03_tracts$half_moe_threshold[which(
-  dp03_tracts$half_moe_threshold < 0.5 * dp03_tracts$DP03_0129PM
+  (dp03_tracts$half_moe_threshold < 0.5 * dp03_tracts$DP03_0129PM) & dp03_tracts$DP03_0129PE > 0
 )] = (0.5 * dp03_tracts$DP03_0129PM)[which(
-  dp03_tracts$half_moe_threshold < 0.5 * dp03_tracts$DP03_0129PM
+  (dp03_tracts$half_moe_threshold < 0.5 * dp03_tracts$DP03_0129PM) & dp03_tracts$DP03_0129PE > 0
 )]
 
 ggplot(dp03_tracts, aes(x=DP03_0129PE, y=child_pov_pct)) +
@@ -55,30 +55,30 @@ ggplot(dp03_tracts, aes(x=DP03_0129PE, y=child_pov_pct_year)) +
 sum(dp03_tracts$DP03_0129PE >= 30, na.rm=T)
 # 169 tracts above 30% child poverty by original DP03 table
 sum(dp03_tracts$child_pov_pct >= 30, na.rm=T)
-# 191 tracts above 30% child poverty by regional adjusted
+# 177 tracts above 30% child poverty by regional adjusted
 sum(dp03_tracts$child_pov_pct_year >= 30, na.rm=T)
-# 183 tracts above 30% child poverty by year adjusted
+# 176 tracts above 30% child poverty by year adjusted
 sum(dp03_tracts$half_moe_threshold >= 30, na.rm=T)
 # 169 tracts above 30% child poverty by 1/2 MOE adjusted
 
 sum(round(dp03_tracts$child_pov_pct) > round(dp03_tracts$DP03_0129PE), na.rm=T)
-# 524 tracts with higher child poverty rates by regional adjustment
+# 246 tracts with higher child poverty rates by regional adjustment
 sum(round(dp03_tracts$child_pov_pct) < round(dp03_tracts$DP03_0129PE), na.rm=T)
 # 26 tracts with lower child poverty rates by regional adjustment
 mean(dp03_tracts$child_pov_pct - dp03_tracts$DP03_0129PE, na.rm=T)
-# Average of 3.2% higher than DP03
+# Average of 1.3% higher than DP03
 
 sum(round(dp03_tracts$child_pov_pct_year) > round(dp03_tracts$DP03_0129PE), na.rm=T)
-# 301 tracts with higher child poverty rates by year adjusted
+# 164 tracts with higher child poverty rates by year adjusted
 sum(round(dp03_tracts$child_pov_pct_year) < round(dp03_tracts$DP03_0129PE), na.rm=T)
-# 19 tracts with lower child poverty rates by year adjusted
+# 85 tracts with lower child poverty rates by year adjusted
 mean(dp03_tracts$child_pov_pct_year - dp03_tracts$DP03_0129PE, na.rm=T)
-# Average of 2.02% higher than DP03
+# Average of 0.62% higher than DP03
 
 sum(round(dp03_tracts$half_moe_threshold) > round(dp03_tracts$DP03_0129PE), na.rm=T)
-# 289 tracts with higher child poverty rates by 1/2 MOE adjusted
+# 11 tracts with higher child poverty rates by 1/2 MOE adjusted
 sum(round(dp03_tracts$half_moe_threshold) < round(dp03_tracts$DP03_0129PE), na.rm=T)
 # 0 tracts with lower child poverty rates by 1/2 MOE adjusted
 mean(dp03_tracts$half_moe_threshold - dp03_tracts$DP03_0129PE, na.rm=T)
-# Average of 0.77% higher than DP03
+# Average of 0.02% higher than DP03
 
