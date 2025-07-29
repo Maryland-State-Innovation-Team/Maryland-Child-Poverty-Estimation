@@ -1,5 +1,6 @@
 list.of.packages = c(
-  "data.table", "tidycensus", "sf", "dplyr", "ggplot2", "scales", "dotenv", "stringr"
+  "data.table", "tidycensus", "sf", "dplyr", "ggplot2", "scales", "dotenv", "stringr",
+  "httr"
 )
 new.packages = list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
@@ -51,12 +52,35 @@ dp03_tracts$DP03_0129PM = as.numeric(dp03_tracts$DP03_0129PM) / 100
 dp03_tracts$child_pov_pct_cv = (dp03_tracts$DP03_0129PM / 1.645) / dp03_tracts$DP03_0129PE
 dp03_tracts$child_pov_pct_cv[which(is.infinite(dp03_tracts$child_pov_pct_cv))] = 0
 
+# Load S0101 for under 18 precalculated
+s0101_url = "https://api.census.gov/data/2023/acs/acs5/subject?get=group(S0101)&ucgid=pseudo(0400000US24$1400000)"
+s0101_req = GET(s0101_url)
+s0101_content = content(s0101_req)
+## Replace NULLs with NAs
+list_no_nulls <- lapply(s0101_content, function(row) {
+  lapply(row, function(item) {
+    if (is.null(item)) NA else item
+  })
+})
+
+## Combine lists into a data frame and unlist the columns
+s0101 = as.data.frame(do.call(rbind, list_no_nulls))
+s0101 = as.data.frame(lapply(df_base, unlist))
+names(s0101) = s0101[1,]
+s0101 = s0101[2:nrow(s0101),c("GEO_ID", "S0101_C01_022E")]
+s0101$GEO_ID = gsub("1400000US", "", s0101$GEO_ID)
+s0101$S0101_C01_022E = as.numeric(s0101$S0101_C01_022E)
+setnames(s0101, c("S0101_C01_022E"), c("under18_pop"))
+dp03_tracts = merge(dp03_tracts, s0101, by="GEO_ID")
+
+dp03_tracts$suppressed =
+  dp03_tracts$DP03_0129PE == 0 &
+  dp03_tracts$under18_pop > 10 &
+  dp03_tracts$DP03_0129PM > 0.1
+dp03_tracts$under18_pop = NULL
 dp03_tracts$`THRESH-child_pov_pct` = dp03_tracts$DP03_0129PE
-dp03_tracts$`THRESH-child_pov_pct`[which(
-  dp03_tracts$DP03_0129PE < 0.5 * dp03_tracts$DP03_0129PM
-)] = (0.5 * dp03_tracts$DP03_0129PM)[which(
-  dp03_tracts$DP03_0129PE < 0.5 * dp03_tracts$DP03_0129PM
-)]
+dp03_tracts$`THRESH-child_pov_pct`[which(dp03_tracts$suppressed)] = 
+  (0.5 * dp03_tracts$DP03_0129PM)[which(dp03_tracts$suppressed)]
 
 dp03_tracts$`THRESH-child_pov_pct_cv` = dp03_tracts$child_pov_pct_cv
 dp03_tracts$`THRESH-substitution` = dp03_tracts$`THRESH-child_pov_pct` != dp03_tracts$DP03_0129PE

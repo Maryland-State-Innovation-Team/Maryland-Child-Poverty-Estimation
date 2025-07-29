@@ -298,10 +298,26 @@ fwrite(acs, "output/all_year_calculations.csv")
 
 # Only keep tracts for further analysis
 acs_tract = acs
-acs_tract$high_child_pov_pct_moe = (acs_tract$child_pov_pct < acs_tract$child_pov_pct_moe * 0.5) & acs_tract$child_pov_pct > 0
-acs_tract$high_child_pov_pct_moe[which(is.na(acs_tract$high_child_pov_pct_moe))] = F
-acs_tract$high_pov_pct_moe = (acs_tract$pov_pct < acs_tract$pov_pct_moe * 0.5) & acs_tract$pov_pct > 0
-acs_tract$high_pov_pct_moe[which(is.na(acs_tract$high_pov_pct_moe))] = F
+# We mark a child poverty estimate is likely suppressed if:
+# - The estimate is zero AND
+# - There are more than 10 children of the demographic in the tract AND
+# - The child poverty margin of error is greater than 10%
+acs_tract$child_pov_pct_suppressed = (
+  acs_tract$child_pov_pct == 0 &
+    acs_tract$total_child_pop > 10 &
+    acs_tract$child_pov_pct_moe > 0.1
+)
+# Likewise, a total poverty estimate is likely suppressed if:
+# - The estimate is zero AND
+# - The child poverty estimate is likely suppressed OR
+# (- There are more than 10 individuals of the demographic in the tract AND
+# - The poverty margin of error is greater than 10%)
+acs_tract$pov_pct_suppressed = acs$pov_pct == 0 & (
+  acs_tract$child_pov_pct_suppressed | (
+    acs_tract$total_pop > 10 &
+      acs_tract$pov_pct_moe > 0.1
+  )
+)
 acs_tract = data.frame(acs_tract)
 
 # Prepare wide table for 2023 tracts
@@ -342,10 +358,10 @@ pb = txtProgressBar(min = 0, max = nrow(acs_tract_2023), style = 3)
 years_desc = 2022:2018
 for (i in 1:nrow(acs_tract_2023)) {
   tract = acs_tract_2023[i,]
-  if (tract$high_child_pov_pct_moe) {
+  if (tract$child_pov_pct_suppressed) {
     substitute_row = find_substitute_year(
       tract_row = tract,
-      moe_column_name = "high_child_pov_pct_moe",
+      moe_column_name = "child_pov_pct_suppressed",
       years_desc = years_desc,
       acs_tract_all = acs_tract
     )
@@ -357,10 +373,10 @@ for (i in 1:nrow(acs_tract_2023)) {
       acs_tract_2023$child_poverty_year[i] = NA
     }
   }
-  if (tract$high_pov_pct_moe) {
+  if (tract$pov_pct_suppressed) {
     substitute_row = find_substitute_year(
       tract_row = tract,
-      moe_column_name = "high_pov_pct_moe",
+      moe_column_name = "pov_pct_suppressed",
       years_desc = years_desc,
       acs_tract_all = acs_tract
     )

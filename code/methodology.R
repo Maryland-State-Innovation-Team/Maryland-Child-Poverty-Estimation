@@ -340,10 +340,27 @@ county_geometry$GEOID = paste0(
   str_pad(county_geometry$county_fip, 3, pad="0")
 )
 
-acs$high_child_pov_pct_moe = (acs$child_pov_pct < acs$child_pov_pct_moe * 0.5) & acs$child_pov_pct > 0
-acs$high_child_pov_pct_moe[which(is.na(acs$high_child_pov_pct_moe))] = F
-acs$high_pov_pct_moe = (acs$pov_pct < acs$pov_pct_moe * 0.5) & acs$pov_pct > 0
-acs$high_pov_pct_moe[which(is.na(acs$high_pov_pct_moe))] = F
+# We mark a child poverty estimate is likely suppressed if:
+# - The estimate is zero AND
+# - There are more than 10 children of the demographic in the tract AND
+# - The child poverty margin of error is greater than 10%
+acs$child_pov_pct_suppressed = (
+  acs$child_pov_pct == 0 &
+  acs$total_child_pop > 10 &
+    acs$child_pov_pct_moe > 0.1
+)
+# Likewise, a total poverty estimate is likely suppressed if:
+# - The estimate is zero AND
+# - The child poverty estimate is likely suppressed OR
+# (- There are more than 10 individuals of the demographic in the tract AND
+# - The poverty margin of error is greater than 10%)
+acs$pov_pct_suppressed = acs$pov_pct == 0 & (
+  acs$child_pov_pct_suppressed | (
+    acs$total_pop > 10 &
+      acs$pov_pct_moe > 0.1
+  )
+)
+
 
 acs = data.frame(acs)
 
@@ -446,10 +463,10 @@ for (i in 1:nrow(acs_tract)) {
     c("puma", "county", "state")
   }
   
-  if (tract$high_child_pov_pct_moe) {
+  if (tract$child_pov_pct_suppressed) {
     substitute_row = find_substitute_data(
       tract_row       = tract,
-      moe_column_name = "high_child_pov_pct_moe",
+      moe_column_name = "child_pov_pct_suppressed",
       geo_hierarchy   = geo_hierarchy,
       geo_datasets    = geo_datasets,
       geo_ids         = geo_ids
@@ -461,10 +478,10 @@ for (i in 1:nrow(acs_tract)) {
     }
   }
 
-  if (tract$high_pov_pct_moe) {
+  if (tract$pov_pct_suppressed) {
     substitute_row = find_substitute_data(
       tract_row       = tract,
-      moe_column_name = "high_pov_pct_moe",
+      moe_column_name = "pov_pct_suppressed",
       geo_hierarchy   = geo_hierarchy,
       geo_datasets    = geo_datasets,
       geo_ids         = geo_ids
