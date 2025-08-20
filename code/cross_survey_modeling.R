@@ -258,6 +258,10 @@ print(
   )
 )
 
+out_file = data.table(md_tracts_2023_sf)
+out_file$geometry = NULL
+fwrite(out_file, "output/cross_survey_model_output.csv")
+
 plot(child_poverty_pct~xgb_pred, data=md_tracts_2023_sf)
 plot(xgb_pred~smoothed_pred, data=md_tracts_2023_sf)
 plot(child_poverty_pct~smoothed_pred, data=md_tracts_2023_sf)
