@@ -35,11 +35,13 @@ census_api_key(api_key, install = TRUE, overwrite = TRUE)
 
 
 # Function for data profiles
-get_dp = function(year, profile, variables){
+get_precomp = function(year, profile, variables, table_type="profile"){
   dp_url = paste0(
     "https://api.census.gov/data/",
     year,
-    "/acs/acs5/profile?get=group(",
+    "/acs/acs5/",
+    table_type,
+    "?get=group(",
     profile,
     ")&ucgid=pseudo(0400000US24$1400000)"
   )
@@ -68,7 +70,7 @@ get_dp = function(year, profile, variables){
 get_yearly_data <- function(year) {
   message(paste("Fetching data for ACS 5-Year", year, "..."))
   
-  dp02 = get_dp(
+  dp02 = get_precomp(
     year, 
     "DP02",
     c(
@@ -79,7 +81,7 @@ get_yearly_data <- function(year) {
     )
   )
   
-  dp03 = get_dp(
+  dp03 = get_precomp(
     year, 
     "DP03",
     c(
@@ -90,25 +92,69 @@ get_yearly_data <- function(year) {
     )
   )
   
-  dp05 = get_dp(
-    year, 
-    "DP05",
+  acs5 <- get_acs(
+    geography = "tract",
+    state = "MD",
+    variables = c(
+      paste0("B19001_0", str_pad(1:12, width=2, pad="0")),
+      "B19058_001",
+      "B19058_002"
+    ),
+    year = year,
+    survey = "acs5"
+  )
+  acs5_wide = dcast(data.table(acs5), GEOID~variable, value.var="estimate")
+  for(var in names(acs5_wide)){
+    if(var %in% c("GEOID", "B19001_001", "B19058_001", "B19058_002")){next}
+    (acs5_wide[,var] = acs5_wide[,var,with=F] / acs5_wide$B19001_001)
+  }
+  acs5_wide$assistance_snap_pct = acs5_wide$B19058_002 / acs5_wide$B19058_001
+  acs5_wide[,c("B19001_001", "B19058_001", "B19058_002")] = NULL
+  setnames(
+    acs5_wide,
+    paste0("B19001_0", str_pad(2:12, width=2, pad="0")),
     c(
-      total_population = "DP05_0001E"
+      "lt10k_pct",
+      "10kto15k_pct",
+      "15kto20k_pct",
+      "20kto25k_pct",
+      "25kto30k_pct",
+      "30kto35k_pct",
+      "35kto40k_pct",
+      "40kto45k_pct",
+      "45kto50k_pct",
+      "50kto60k_pct",
+      "60kto75k_pct"
     )
   )
+  
+  s0101 = get_precomp(
+    year,
+    "S0101",
+    c(
+      total_population = "S0101_C01_001E",
+      under18_pop = "S0101_C01_022E"
+    ),
+    table_type="subject"
+  )
+  s0101$under18_pct = (s0101$under18_pop / s0101$total_population)
   
   data = merge(
     dp02, dp03, by="GEOID", all=T
   )
+  
+  # Convert DP percentages to decimals
+  data <- data %>%
+    mutate(across(ends_with("_pct"), ~ . / 100))
+  
   data = merge(
-    data, dp05, by="GEOID", all=T
+    data, acs5_wide, by="GEOID", all=T
+  )
+  data = merge(
+    data, s0101, by="GEOID", all=T
   )
   
-  
-  # Convert percentages to decimals
-  data <- data %>%
-    mutate(across(ends_with("_pct"), ~ . / 100), year = year)
+  data$year = year
   
   return(data)
 }
@@ -131,16 +177,16 @@ glimpse(all_years_data)
 
 # Filter out unreliable zero-poverty estimates.
 # Here, we define "unreliable" as any tract where the poverty estimate is exactly 0
-# but the margin of error is greater than 10 percentage points (0.10).
+# but the margin of error is greater than 10 percentage points.
 unreliable_zeros_count <- all_years_data %>%
-  filter(child_poverty_pct == 0 & child_poverty_moe > 0.10) %>%
+  filter(child_poverty_pct == 0 & child_poverty_moe > 10) %>%
   nrow()
 
 message(paste("Identified and removed", unreliable_zeros_count, "unreliable zero-poverty estimates."))
 
 # Create the final modeling dataset by removing unreliable estimates and NAs
 model_data <- all_years_data %>%
-  filter(!(child_poverty_pct == 0 & child_poverty_moe > 0.10)) %>%
+  filter(!(child_poverty_pct == 0 & child_poverty_moe > 10)) %>%
   select(-GEOID, -child_poverty_moe, -year) %>% # Remove non-predictor columns
   na.omit()
 
@@ -185,9 +231,18 @@ print(xgb_model)
 # Evaluate the final model on the held-out test data
 predictions <- predict(xgb_model, test_data)
 rmse_test <- RMSE(predictions, test_data$child_poverty_pct)
+r2_test <- R2(predictions, test_data$child_poverty_pct)
 
 message(paste("Final Model RMSE on reserved test data:", round(rmse_test, 4)))
+message(paste("Final Model R2 on reserved test data:", round(r2_test, 4)))
 
+importance <- varImp(xgb_model, scale = TRUE)
+
+# Print the ranked list of variables
+print(importance)
+
+# Plot the top 20 most important variables
+plot(importance, top = 20)
 
 #-----------------------------------------------------------------------------#
 # 5. SPATIAL SMOOTHING OF PREDICTIONS (EXAMPLE ON 2023 DATA)
@@ -212,12 +267,8 @@ if(!file.exists("input/pop_tracts_2023.RData")){
 
 # Step 5.2: Generate initial XGBoost predictions for all 2023 tracts
 # First, get the full predictor dataset for 2023
-if(!file.exists("input/full_pred_2023.RData")){
-  full_2023_data <- get_yearly_data(2023) %>% na.omit()
-  save(full_2023_data, file="input/full_pred_2023.RData")
-}else{
-  load("input/full_pred_2023.RData")
-}
+load("input/cross_data.RData")
+full_2023_data <- all_years_data %>% filter(year==2023) %>% na.omit()
 
 # Make predictions
 full_2023_data$xgb_pred <- predict(xgb_model, full_2023_data)
@@ -266,12 +317,7 @@ plot(child_poverty_pct~xgb_pred, data=md_tracts_2023_sf)
 plot(xgb_pred~smoothed_pred, data=md_tracts_2023_sf)
 plot(child_poverty_pct~smoothed_pred, data=md_tracts_2023_sf)
 
-# Limit plot to Baltimore City bounds using lat/lng bounding box
-# Baltimore City approximate bounding box: 
-#   min_lon = -76.711, max_lon = -76.529
-#   min_lat = 39.218, max_lat = 39.372
-
-
+# Limit plot to Baltimore City
 baltimore_tracts <- subset(md_tracts_2023_sf, startsWith(GEOID, "24510"))
 
 # Find the min/max across all three columns for consistent scaling
