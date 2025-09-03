@@ -1,8 +1,8 @@
 #-----------------------------------------------------------------------------#
-# Maryland Child Poverty Estimation Script (2020-2023 Data)
+# Maryland Child Poverty Estimation Script (2014-2023 Data)
 #
 # This script builds a model to estimate child poverty rates at the census
-# tract level in Maryland. It uses ACS 5-year data for 2020-2023, trains
+# tract level in Maryland. It uses ACS 5-year data for 2014-2023, trains
 # an XGBoost model, and applies spatial smoothing to the results, following
 # the methods described in the SEHSD Working Paper on cross-survey modeling.
 # https://www2.census.gov/library/working-papers/2025/demo/sehsd-wp2025-05.pdf
@@ -30,7 +30,7 @@ census_api_key(api_key, install = TRUE, overwrite = TRUE)
 
 
 #-----------------------------------------------------------------------------#
-# 2. DATA ACQUISITION: DOWNLOAD AND PROCESS ACS DATA (2020-2023)
+# 2. DATA ACQUISITION: DOWNLOAD AND PROCESS ACS DATA (2014-2023)
 #-----------------------------------------------------------------------------#
 
 
@@ -77,7 +77,10 @@ get_yearly_data <- function(year) {
       edu_less_than_hs_pct = "DP02_0060PE",
       disability_pct = "DP02_0072PE",
       linguistic_isolation_pct = "DP02_0115PE",
-      female_headed_family_pct = "DP02_0010PE"
+      married_couple_family_pct="DP02_0002PE",
+      cohabitating_couple_family_pct="DP02_0004PE",
+      single_male_headed_family_pct="DP02_0006PE",
+      single_female_headed_family_pct = "DP02_0010PE"
     )
   )
   
@@ -88,7 +91,21 @@ get_yearly_data <- function(year) {
       child_poverty_pct = "DP03_0129PE",
       child_poverty_moe = "DP03_0129PM",
       unemployment_pct = "DP03_0009PE",
-      lf_participation_pct = "DP03_0002PE"
+      lf_participation_pct = "DP03_0002PE",
+      health_insurance_pct = "DP03_0096PE",
+      private_health_insurance_pct = "DP03_0097PE",
+      public_health_insurance_pct = "DP03_0098PE"
+    )
+  )
+  
+  dp04 = get_precomp(
+    year, 
+    "DP04",
+    c(
+      no_vehicle_available_pct = "DP04_0058PE",
+      one_vehicle_available_pct = "DP04_0059PE",
+      two_vehicles_available_pct = "DP04_0060PE",
+      three_or_more_vehicles_available_pct = "DP04_0061PE"
     )
   )
   
@@ -96,9 +113,28 @@ get_yearly_data <- function(year) {
     geography = "tract",
     state = "MD",
     variables = c(
-      paste0("B19001_0", str_pad(1:12, width=2, pad="0")),
-      "B19058_001",
-      "B19058_002"
+      paste0("B19001_0", str_pad(1:12, width=2, pad="0")), # Income thresholds
+      "B19058_001", # Public assistance or SNAP denominator
+      "B19058_002", # With public assistance or SNAP
+      "B19013_001", # Median household income
+      "B25140_002", # Owned units with mortgage
+      "B25140_003", # Owned units with mortgage, housing costs gt 30% housing costs
+      "B25140_006", # Owned units without a mortgage
+      "B25140_007", # Owned units without a mortgage, housing costs gt 30% housing costs
+      "B25140_010", # Rented units
+      "B25140_011", # Rented units, housing costs gt 30% housing costs
+      "B25107_001", # Median home value
+      "B25003_001", # Tenure denominator
+      "B25003_002", # Owner occupied
+      "B25003_003", # Renter occupied
+      "B11003_001", # Households with children denominator
+      "B11003_002", # Married households
+      "B11003_003", # Married households with own children under 18
+      "B11003_008", # Other families
+      "B11003_009", # Other families, male householder
+      "B11003_010", # Other families, male householder with own children under 18
+      "B11003_015", # Other families, female householder
+      "B11003_016", # Other families, female householder with own children under 18
     ),
     year = year,
     survey = "acs5"
@@ -142,6 +178,9 @@ get_yearly_data <- function(year) {
   data = merge(
     dp02, dp03, by="GEOID", all=T
   )
+  data = merge(
+    data, dp04, by="GEOID", all=T
+  )
   
   # Convert DP percentages to decimals
   data <- data %>%
@@ -159,9 +198,9 @@ get_yearly_data <- function(year) {
   return(data)
 }
 
-# Loop through the years 2020-2023 and bind the data together.
+# Loop through the years 2014-2023 and bind the data together.
 if(!file.exists("input/cross_data.RData")){
-  all_years_data <- do.call(rbind, lapply(2020:2023, get_yearly_data))
+  all_years_data <- do.call(rbind, lapply(2014:2023, get_yearly_data))
   save(all_years_data, file="input/cross_data.RData")
 }else{
   load("input/cross_data.RData")
@@ -172,21 +211,11 @@ glimpse(all_years_data)
 
 
 #-----------------------------------------------------------------------------#
-# 3. DATA PREPARATION AND FILTERING
+# 3. DATA PREPARATION
 #-----------------------------------------------------------------------------#
-
-# Filter out unreliable zero-poverty estimates.
-# Here, we define "unreliable" as any tract where the poverty estimate is exactly 0
-# but the margin of error is greater than 10 percentage points.
-unreliable_zeros_count <- all_years_data %>%
-  filter(child_poverty_pct == 0 & child_poverty_moe > 10) %>%
-  nrow()
-
-message(paste("Identified and removed", unreliable_zeros_count, "unreliable zero-poverty estimates."))
 
 # Create the final modeling dataset by removing unreliable estimates and NAs
 model_data <- all_years_data %>%
-  filter(!(child_poverty_pct == 0 & child_poverty_moe > 10)) %>%
   select(-GEOID, -child_poverty_moe, -year) %>% # Remove non-predictor columns
   na.omit()
 
