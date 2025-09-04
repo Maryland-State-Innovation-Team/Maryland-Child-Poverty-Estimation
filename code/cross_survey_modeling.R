@@ -664,24 +664,19 @@ md_tracts_2023_sf <- md_tracts_2023_sf %>%
   rename(population = estimate) %>%
   filter(!is.na(xgb_pred)) # Ensure we only model tracts with predictions
 
-# Step 5.3: Create spatial weights matrix
-# Using 5 nearest neighbors as described in the paper
-neighbors <- knearneigh(st_centroid(md_tracts_2023_sf), k = 5)
-nb_weights <- knn2nb(neighbors)
+# Step 5.3: Create spatial weights matrix (REVISED)
+# Using Queen contiguity for a more natural definition of neighbors
+nb_weights <- poly2nb(md_tracts_2023_sf, queen = TRUE)
 list_weights <- nb2listw(nb_weights, style = "W")
 
-# Step 5.4: Fit the Spatial Autoregressive (SAR) Model
-# Following the paper's formula: y = rho*W*y + B*x_popsize + e
-# where 'y' is our initial XGBoost prediction.
-sar_model <- spautolm(
-  xgb_pred ~ sqrt(population), # Weight by sqrt of pop size
-  data = md_tracts_2023_sf,
-  listw = list_weights,
-  family = "SAR"
-)
+# Step 5.4: Calculate the spatial lag of the XGBoost predictions
+# This is the average prediction value of a tract's neighbors
+xgb_lag <- lag.listw(list_weights, md_tracts_2023_sf$xgb_pred)
 
-# Step 5.5: Get the final, smoothed predictions
-md_tracts_2023_sf$smoothed_pred <- fitted(sar_model)
+# Step 5.5: Create the final smoothed prediction by blending
+# Set alpha to control smoothing strength. Let's try 0.5 (50% original, 50% smoothed)
+alpha <- 0.5
+md_tracts_2023_sf$smoothed_pred <- (alpha * md_tracts_2023_sf$xgb_pred) + ((1 - alpha) * xgb_lag)
 
 message("Spatial smoothing complete.")
 
