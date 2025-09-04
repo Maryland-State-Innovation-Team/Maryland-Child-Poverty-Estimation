@@ -9,6 +9,8 @@
 #-----------------------------------------------------------------------------#
 
 ## 1. SETUP: LOAD PACKAGES AND API KEY
+options(tigris_use_cache = TRUE)
+nad83_maryland_epsg <- 26985
 
 # Boilerplate for package installation and loading
 list.of.packages <- c(
@@ -66,47 +68,274 @@ get_precomp = function(year, profile, variables, table_type="profile"){
   return(dp)
 }
 
+dp02_variables = list(
+  "2014" = c(
+    edu_less_than_hs_pct = "DP02_0059PE",
+    disability_pct = "DP02_0071PE",
+    linguistic_isolation_pct = "DP02_0115PE",
+    married_couple_family_pct="DP02_0004PE",
+    single_male_headed_family_pct="DP02_0006PE",
+    single_female_headed_family_pct = "DP02_0008PE"
+    # ,broadband_internet_subscription_pct="DP02_0152PE" # Not available for prior years
+  ),
+  "2015" = c(
+    edu_less_than_hs_pct = "DP02_0059PE",
+    disability_pct = "DP02_0071PE",
+    linguistic_isolation_pct = "DP02_0115PE",
+    married_couple_family_pct="DP02_0004PE",
+    single_male_headed_family_pct="DP02_0006PE",
+    single_female_headed_family_pct = "DP02_0008PE"
+    # ,broadband_internet_subscription_pct="DP02_0152PE"
+  ),
+  "2016" = c(
+    edu_less_than_hs_pct = "DP02_0059PE",
+    disability_pct = "DP02_0071PE",
+    linguistic_isolation_pct = "DP02_0115PE",
+    married_couple_family_pct="DP02_0004PE",
+    single_male_headed_family_pct="DP02_0006PE",
+    single_female_headed_family_pct = "DP02_0008PE"
+    # ,broadband_internet_subscription_pct="DP02_0152PE"
+  ),
+  "2017" = c(
+    edu_less_than_hs_pct = "DP02_0059PE",
+    disability_pct = "DP02_0071PE",
+    linguistic_isolation_pct = "DP02_0115PE",
+    married_couple_family_pct="DP02_0004PE",
+    single_male_headed_family_pct="DP02_0006PE",
+    single_female_headed_family_pct = "DP02_0008PE"
+    # ,broadband_internet_subscription_pct="DP02_0152PE"
+  ),
+  "2018" = c(
+    edu_less_than_hs_pct = "DP02_0059PE",
+    disability_pct = "DP02_0071PE",
+    linguistic_isolation_pct = "DP02_0115PE",
+    married_couple_family_pct="DP02_0004PE",
+    single_male_headed_family_pct="DP02_0006PE",
+    single_female_headed_family_pct = "DP02_0008PE"
+    # ,broadband_internet_subscription_pct="DP02_0152PE"
+  ),
+  "2019" = c(
+    edu_less_than_hs_pct = "DP02_0060PE",
+    disability_pct = "DP02_0072PE",
+    linguistic_isolation_pct = "DP02_0115PE",
+    married_couple_family_pct="DP02_0002PE",
+    single_male_headed_family_pct="DP02_0006PE",
+    single_female_headed_family_pct = "DP02_0010PE"
+    # ,broadband_internet_subscription_pct="DP02_0153PE"
+  ),
+  "2020" = c(
+    edu_less_than_hs_pct = "DP02_0060PE",
+    disability_pct = "DP02_0072PE",
+    linguistic_isolation_pct = "DP02_0115PE",
+    married_couple_family_pct="DP02_0002PE",
+    single_male_headed_family_pct="DP02_0006PE",
+    single_female_headed_family_pct = "DP02_0010PE"
+    # ,broadband_internet_subscription_pct="DP02_0154PE"
+  ),
+  "2021" = c(
+    edu_less_than_hs_pct = "DP02_0060PE",
+    disability_pct = "DP02_0072PE",
+    linguistic_isolation_pct = "DP02_0115PE",
+    married_couple_family_pct="DP02_0002PE",
+    single_male_headed_family_pct="DP02_0006PE",
+    single_female_headed_family_pct = "DP02_0010PE"
+    # ,broadband_internet_subscription_pct="DP02_0154PE"
+  ),
+  "2022" = c(
+    edu_less_than_hs_pct = "DP02_0060PE",
+    disability_pct = "DP02_0072PE",
+    linguistic_isolation_pct = "DP02_0115PE",
+    married_couple_family_pct="DP02_0002PE",
+    single_male_headed_family_pct="DP02_0006PE",
+    single_female_headed_family_pct = "DP02_0010PE"
+    # ,broadband_internet_subscription_pct="DP02_0154PE"
+  ),
+  "2023" = c(
+    edu_less_than_hs_pct = "DP02_0060PE",
+    disability_pct = "DP02_0072PE",
+    linguistic_isolation_pct = "DP02_0115PE",
+    married_couple_family_pct="DP02_0002PE",
+    single_male_headed_family_pct="DP02_0006PE",
+    single_female_headed_family_pct = "DP02_0010PE"
+    # ,broadband_internet_subscription_pct="DP02_0154PE"
+  )
+)
+
+dp03_variables = list(
+  "2014" = c(
+    child_poverty_pct = "DP03_0129PE",
+    child_poverty_moe = "DP03_0129PM",
+    unemployment_pct = "DP03_0009PE",
+    lf_participation_pct = "DP03_0002PE",
+    health_insurance_pct = "DP03_0096PE",
+    private_health_insurance_pct = "DP03_0097PE",
+    public_health_insurance_pct = "DP03_0098PE"
+  ),
+  "2015" = c(
+    child_poverty_pct = "DP03_0129PE",
+    child_poverty_moe = "DP03_0129PM",
+    unemployment_pct = "DP03_0009PE",
+    lf_participation_pct = "DP03_0002PE",
+    health_insurance_pct = "DP03_0096PE",
+    private_health_insurance_pct = "DP03_0097PE",
+    public_health_insurance_pct = "DP03_0098PE"
+  ),
+  "2016" = c(
+    child_poverty_pct = "DP03_0129PE",
+    child_poverty_moe = "DP03_0129PM",
+    unemployment_pct = "DP03_0009PE",
+    lf_participation_pct = "DP03_0002PE",
+    health_insurance_pct = "DP03_0096PE",
+    private_health_insurance_pct = "DP03_0097PE",
+    public_health_insurance_pct = "DP03_0098PE"
+  ),
+  "2017" = c(
+    child_poverty_pct = "DP03_0129PE",
+    child_poverty_moe = "DP03_0129PM",
+    unemployment_pct = "DP03_0009PE",
+    lf_participation_pct = "DP03_0002PE",
+    health_insurance_pct = "DP03_0096PE",
+    private_health_insurance_pct = "DP03_0097PE",
+    public_health_insurance_pct = "DP03_0098PE"
+  ),
+  "2018" = c(
+    child_poverty_pct = "DP03_0129PE",
+    child_poverty_moe = "DP03_0129PM",
+    unemployment_pct = "DP03_0009PE",
+    lf_participation_pct = "DP03_0002PE",
+    health_insurance_pct = "DP03_0096PE",
+    private_health_insurance_pct = "DP03_0097PE",
+    public_health_insurance_pct = "DP03_0098PE"
+  ),
+  "2019" = c(
+    child_poverty_pct = "DP03_0129PE",
+    child_poverty_moe = "DP03_0129PM",
+    unemployment_pct = "DP03_0009PE",
+    lf_participation_pct = "DP03_0002PE",
+    health_insurance_pct = "DP03_0096PE",
+    private_health_insurance_pct = "DP03_0097PE",
+    public_health_insurance_pct = "DP03_0098PE"
+  ),
+  "2020" = c(
+    child_poverty_pct = "DP03_0129PE",
+    child_poverty_moe = "DP03_0129PM",
+    unemployment_pct = "DP03_0009PE",
+    lf_participation_pct = "DP03_0002PE",
+    health_insurance_pct = "DP03_0096PE",
+    private_health_insurance_pct = "DP03_0097PE",
+    public_health_insurance_pct = "DP03_0098PE"
+  ),
+  "2021" = c(
+    child_poverty_pct = "DP03_0129PE",
+    child_poverty_moe = "DP03_0129PM",
+    unemployment_pct = "DP03_0009PE",
+    lf_participation_pct = "DP03_0002PE",
+    health_insurance_pct = "DP03_0096PE",
+    private_health_insurance_pct = "DP03_0097PE",
+    public_health_insurance_pct = "DP03_0098PE"
+  ),
+  "2022" = c(
+    child_poverty_pct = "DP03_0129PE",
+    child_poverty_moe = "DP03_0129PM",
+    unemployment_pct = "DP03_0009PE",
+    lf_participation_pct = "DP03_0002PE",
+    health_insurance_pct = "DP03_0096PE",
+    private_health_insurance_pct = "DP03_0097PE",
+    public_health_insurance_pct = "DP03_0098PE"
+  ),
+  "2023" = c(
+    child_poverty_pct = "DP03_0129PE",
+    child_poverty_moe = "DP03_0129PM",
+    unemployment_pct = "DP03_0009PE",
+    lf_participation_pct = "DP03_0002PE",
+    health_insurance_pct = "DP03_0096PE",
+    private_health_insurance_pct = "DP03_0097PE",
+    public_health_insurance_pct = "DP03_0098PE"
+  )
+)
+
+dp04_variables = list(
+  "2014" = c(
+    no_vehicle_available_pct = "DP04_0057PE",
+    one_vehicle_available_pct = "DP04_0058PE",
+    two_vehicles_available_pct = "DP04_0059PE",
+    three_or_more_vehicles_available_pct = "DP04_0060PE"
+  ),
+  "2015" = c(
+    no_vehicle_available_pct = "DP04_0058PE",
+    one_vehicle_available_pct = "DP04_0059PE",
+    two_vehicles_available_pct = "DP04_0060PE",
+    three_or_more_vehicles_available_pct = "DP04_0061PE"
+  ),
+  "2016" = c(
+    no_vehicle_available_pct = "DP04_0058PE",
+    one_vehicle_available_pct = "DP04_0059PE",
+    two_vehicles_available_pct = "DP04_0060PE",
+    three_or_more_vehicles_available_pct = "DP04_0061PE"
+  ),
+  "2017" = c(
+    no_vehicle_available_pct = "DP04_0058PE",
+    one_vehicle_available_pct = "DP04_0059PE",
+    two_vehicles_available_pct = "DP04_0060PE",
+    three_or_more_vehicles_available_pct = "DP04_0061PE"
+  ),
+  "2018" = c(
+    no_vehicle_available_pct = "DP04_0058PE",
+    one_vehicle_available_pct = "DP04_0059PE",
+    two_vehicles_available_pct = "DP04_0060PE",
+    three_or_more_vehicles_available_pct = "DP04_0061PE"
+  ),
+  "2019" = c(
+    no_vehicle_available_pct = "DP04_0058PE",
+    one_vehicle_available_pct = "DP04_0059PE",
+    two_vehicles_available_pct = "DP04_0060PE",
+    three_or_more_vehicles_available_pct = "DP04_0061PE"
+  ),
+  "2020" = c(
+    no_vehicle_available_pct = "DP04_0058PE",
+    one_vehicle_available_pct = "DP04_0059PE",
+    two_vehicles_available_pct = "DP04_0060PE",
+    three_or_more_vehicles_available_pct = "DP04_0061PE"
+  ),
+  "2021" = c(
+    no_vehicle_available_pct = "DP04_0058PE",
+    one_vehicle_available_pct = "DP04_0059PE",
+    two_vehicles_available_pct = "DP04_0060PE",
+    three_or_more_vehicles_available_pct = "DP04_0061PE"
+  ),
+  "2022" = c(
+    no_vehicle_available_pct = "DP04_0058PE",
+    one_vehicle_available_pct = "DP04_0059PE",
+    two_vehicles_available_pct = "DP04_0060PE",
+    three_or_more_vehicles_available_pct = "DP04_0061PE"
+  ),
+  "2023" = c(
+    no_vehicle_available_pct = "DP04_0058PE",
+    one_vehicle_available_pct = "DP04_0059PE",
+    two_vehicles_available_pct = "DP04_0060PE",
+    three_or_more_vehicles_available_pct = "DP04_0061PE"
+  )
+)
+
 # Function to get and process data for a single year
 get_yearly_data <- function(year) {
   message(paste("Fetching data for ACS 5-Year", year, "..."))
-  
   dp02 = get_precomp(
     year, 
     "DP02",
-    c(
-      edu_less_than_hs_pct = "DP02_0060PE",
-      disability_pct = "DP02_0072PE",
-      linguistic_isolation_pct = "DP02_0115PE",
-      married_couple_family_pct="DP02_0002PE",
-      cohabitating_couple_family_pct="DP02_0004PE",
-      single_male_headed_family_pct="DP02_0006PE",
-      single_female_headed_family_pct = "DP02_0010PE"
-    )
+    dp02_variables[[as.character(year)]]
   )
   
   dp03 = get_precomp(
     year, 
     "DP03",
-    c(
-      child_poverty_pct = "DP03_0129PE",
-      child_poverty_moe = "DP03_0129PM",
-      unemployment_pct = "DP03_0009PE",
-      lf_participation_pct = "DP03_0002PE",
-      health_insurance_pct = "DP03_0096PE",
-      private_health_insurance_pct = "DP03_0097PE",
-      public_health_insurance_pct = "DP03_0098PE"
-    )
+    dp03_variables[[as.character(year)]]
   )
   
   dp04 = get_precomp(
     year, 
     "DP04",
-    c(
-      no_vehicle_available_pct = "DP04_0058PE",
-      one_vehicle_available_pct = "DP04_0059PE",
-      two_vehicles_available_pct = "DP04_0060PE",
-      three_or_more_vehicles_available_pct = "DP04_0061PE"
-    )
+    dp04_variables[[as.character(year)]]
   )
   
   acs5 <- get_acs(
@@ -117,12 +346,14 @@ get_yearly_data <- function(year) {
       "B19058_001", # Public assistance or SNAP denominator
       "B19058_002", # With public assistance or SNAP
       "B19013_001", # Median household income
-      "B25140_002", # Owned units with mortgage
-      "B25140_003", # Owned units with mortgage, housing costs gt 30% housing costs
-      "B25140_006", # Owned units without a mortgage
-      "B25140_007", # Owned units without a mortgage, housing costs gt 30% housing costs
-      "B25140_010", # Rented units
-      "B25140_011", # Rented units, housing costs gt 30% housing costs
+      "B25106_024", # Renter-occupied housing units
+      "B25106_025", # Renter-occupied housing units less than $20k
+      "B25106_028", # Renter-occupied housing units less than $20k, burden 30% or more
+      "B25106_029", # Renter-occupied housing units $20-$35k
+      "B25106_032", # Renter-occupied housing units $20-$35k, burden 30% or more
+      "B25106_033", # Renter-occupied housing units $35-$50k
+      "B25106_036", # Renter-occupied housing units $35-$50k, burden 30% or more
+      "B25106_045", # Renter-occupied housing units, zero or negative income
       "B25107_001", # Median home value
       "B25003_001", # Tenure denominator
       "B25003_002", # Owner occupied
@@ -134,34 +365,102 @@ get_yearly_data <- function(year) {
       "B11003_009", # Other families, male householder
       "B11003_010", # Other families, male householder with own children under 18
       "B11003_015", # Other families, female householder
-      "B11003_016", # Other families, female householder with own children under 18
+      "B11003_016" # Other families, female householder with own children under 18
     ),
     year = year,
-    survey = "acs5"
+    survey = "acs5",
+    geometry = T
   )
+  acs5_geometry = unique(acs5[,c("GEOID", "geometry")])
+  acs5 = data.table(acs5)
+  acs5$geometry = NULL
+  acs5_geometry = st_transform(acs5_geometry, nad83_maryland_epsg) # Maryland projection
+  acs5_geometry$area = st_area(acs5_geometry)
+  acs5_geometry = data.table(acs5_geometry)
+  acs5_geometry$geometry = NULL
   acs5_wide = dcast(data.table(acs5), GEOID~variable, value.var="estimate")
-  for(var in names(acs5_wide)){
-    if(var %in% c("GEOID", "B19001_001", "B19058_001", "B19058_002")){next}
-    (acs5_wide[,var] = acs5_wide[,var,with=F] / acs5_wide$B19001_001)
+  acs5_wide = merge(acs5_wide, acs5_geometry, by="GEOID")
+  
+  # 1. Calculate the percentage of households receiving SNAP benefits.
+  acs5_wide[, assistance_snap_pct := B19058_002 / B19058_001]
+  
+  # 2. Calculate housing tenure percentages (owner vs. renter occupied).
+  acs5_wide[, owner_occupied_pct := B25003_002 / B25003_001]
+  acs5_wide[, renter_occupied_pct := B25003_003 / B25003_001]
+  
+  # 3. Calculate the percentage of renter households that are cost-burdened, by income bracket.
+  # For each income bracket, this is the number of cost-burdened households divided by the total
+  # number of renter households in that bracket.
+  acs5_wide[, renter_cost_burden_lt20k_pct := B25106_028 / B25106_025]
+  acs5_wide[, renter_cost_burden_20kto35k_pct := B25106_032 / B25106_029]
+  acs5_wide[, renter_cost_burden_35kto50k_pct := B25106_036 / B25106_033]
+  # Note: Zero/negative income households are calculated as a percentage of all renters.
+  acs5_wide[, renter_zero_neg_income_pct := B25106_045 / B25106_024]
+  
+  # 4. Calculate the percentage of each family type that has children under 18.
+  # The denominator for each is the total count of that specific family type.
+  acs5_wide[, pct_married_with_children := B11003_003 / B11003_002]
+  acs5_wide[, pct_male_hh_with_children := B11003_010 / B11003_009]
+  acs5_wide[, pct_female_hh_with_children := B11003_016 / B11003_015]
+  
+  
+  # --- Re-calculate Income Thresholds as Percentages ---
+  
+  # Define the income variables to be converted to percentages
+  income_vars <- paste0("B19001_0", str_pad(2:12, width = 2, pad = "0"))
+  
+  # This loop calculates the percentage for each income bracket.
+  # It divides each bracket's count by the total number of households (B19001_001).
+  for (var in income_vars) {
+    acs5_wide[, (var) := .SD[[var]] / B19001_001, .SDcols = var]
   }
-  acs5_wide$assistance_snap_pct = acs5_wide$B19058_002 / acs5_wide$B19058_001
-  acs5_wide[,c("B19001_001", "B19058_001", "B19058_002")] = NULL
+  
+  
+  # --- Clean Up and Rename Columns ---
+  
+  # 1. Replace NaN values with 0.
+  # This can happen during division if the denominator is zero.
+  # This loop iterates through each column and replaces NaN with 0.
+  for (j in names(acs5_wide)) {
+    set(acs5_wide, which(is.nan(acs5_wide[[j]])), j, 0)
+  }
+  
+  # 2. List all original raw count and denominator columns that are now redundant.
+  cols_to_remove <- c(
+    "B19001_001", "B19058_001", "B19058_002", "B25106_024", "B25106_025",
+    "B25106_028", "B25106_029", "B25106_032", "B25106_033", "B25106_036",
+    "B25106_045", "B25003_001", "B25003_002", "B25003_003", "B11003_001",
+    "B11003_002", "B11003_003", "B11003_008", "B11003_009", "B11003_010",
+    "B11003_015", "B11003_016"
+  )
+  
+  # Remove these columns from the data.table
+  acs5_wide[, (cols_to_remove) := NULL]
+  
+  # 3. Rename the income threshold columns to be more descriptive.
   setnames(
     acs5_wide,
-    paste0("B19001_0", str_pad(2:12, width=2, pad="0")),
-    c(
-      "lt10k_pct",
-      "10kto15k_pct",
-      "15kto20k_pct",
-      "20kto25k_pct",
-      "25kto30k_pct",
-      "30kto35k_pct",
-      "35kto40k_pct",
-      "40kto45k_pct",
-      "45kto50k_pct",
-      "50kto60k_pct",
-      "60kto75k_pct"
+    old = paste0("B19001_0", str_pad(2:12, width=2, pad="0")),
+    new = c(
+      "income_lt10k_pct",
+      "income_10kto15k_pct",
+      "income_15kto20k_pct",
+      "income_20kto25k_pct",
+      "income_25kto30k_pct",
+      "income_30kto35k_pct",
+      "income_35kto40k_pct",
+      "income_40kto45k_pct",
+      "income_45kto50k_pct",
+      "income_50kto60k_pct",
+      "income_60kto75k_pct"
     )
+  )
+  
+  # 4. Rename median income and home value columns.
+  setnames(
+    acs5_wide,
+    old = c("B19013_001", "B25107_001"),
+    new = c("median_household_income", "median_home_value")
   )
   
   s0101 = get_precomp(
@@ -194,6 +493,8 @@ get_yearly_data <- function(year) {
   )
   
   data$year = year
+  data$population_density = data$total_population / data$area
+  data$area = NULL
   
   return(data)
 }
