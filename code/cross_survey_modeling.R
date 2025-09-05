@@ -554,29 +554,51 @@ get_yearly_data <- function(year) {
   data$population_density = data$total_population / data$area
   data[,c("area", "total_population", "under18_pop")] = NULL
   
+  # Replace IV NAs with median values
+  for (j in names(data)) {
+    if(!j %in% c("child_poverty_pct", "GEOID")){
+      set(data, which(is.na(data[[j]])), j, median(data[[j]], na.rm=T))
+    }
+  }
+  
   # Engineered features
   data = data.table(data)
   
-  # Extreme poverty times assistance
+  ## Combine lowest two income brackets
+  data[, deep_poverty_income_pct := income_lt10k_pct + income_10kto15k_pct]
+  
+  ## Add polynomial features for a key variables
+  data[, total_poverty_pct_sq := total_poverty_pct^2]
+  data[, assistance_snap_pct_sq := assistance_snap_pct^2]
+  data[, deep_poverty_income_pct_sq := deep_poverty_income_pct^2]
+  data[, under18_pct_sq := under18_pct^2]
+  data[, median_hh_income_sq := median_household_income^2]
+  data[, private_health_insurance_pct := private_health_insurance_pct^2]
+  
+  ## Interaction: Extreme poverty times assistance
   data[, economic_distress_idx := income_lt10k_pct * assistance_snap_pct]
   
-  # Tenancy times vehicle ownership
+  ## Interaction:  Tenancy times vehicle ownership
   data[, housing_transit_insecurity := renter_occupied_pct * no_vehicle_available_pct]
-  
-  # Combine lowest two income brackets
-  data[, deep_poverty_income_pct := income_lt10k_pct + income_10kto15k_pct]
 
-  # Naive child poverty
-  data[,naive_child_poverty_pct := total_poverty_pct * under18_pct]
+  ## Interaction:  Naive child poverty
+  data[, naive_child_poverty_pct := total_poverty_pct * under18_pct]
   
-  # We focus on the two lowest income brackets for renters, as they are most at risk
+  ## Interaction: Renters * lowest income bracket cost burdens
   data[, concentrated_housing_burden := renter_occupied_pct * (renter_cost_burden_lt20k_pct + renter_cost_burden_20kto35k_pct)]
-  
-  # Add a polynomial feature for a key variable
-  data[, median_hh_income_sq := median_household_income^2]
   
   # Public to private health insurance ratio, add a small constant to avoid division by zero
   data[, health_ins_dependency_ratio := public_health_insurance_pct / (private_health_insurance_pct + 0.01)]
+  
+  # Create a "gap" feature to measure disproportionate impact
+  data[, child_poverty_gap := total_poverty_pct - naive_child_poverty_pct]
+  
+  # Create a ratio of single-parent to married-couple families
+  data[, single_to_married_family_ratio := 
+         (single_male_headed_family_pct + single_female_headed_family_pct) / (married_couple_family_pct + 0.01)]
+  
+  # Create an index for compounding workforce challenges
+  data[, workforce_challenge_idx := unemployment_pct * edu_less_than_hs_pct]
   
   return(data)
 }
@@ -584,14 +606,6 @@ get_yearly_data <- function(year) {
 # Loop through the years 2012-2023 and bind the data together.
 if(!file.exists("input/cross_data.RData")){
   all_years_data <- do.call(rbind, lapply(2012:2023, get_yearly_data))
-  
-  # Replace IV NAs with median values
-  for (j in names(all_years_data)) {
-    if(!j %in% c("child_poverty_pct", "GEOID")){
-      set(all_years_data, which(is.na(all_years_data[[j]])), j, median(all_years_data[[j]], na.rm=T))
-    }
-  }
-  
   save(all_years_data, file="input/cross_data.RData")
 }else{
   load("input/cross_data.RData")
@@ -620,62 +634,6 @@ message(paste("Final dataset for modeling contains", nrow(model_data), "observat
 # 4. MODEL TRAINING AND EVALUATION (REVISED)
 #-----------------------------------------------------------------------------#
 
-ordered_predictors = c(
-  "total_poverty_pct",
-  "private_health_insurance_pct",
-  "married_with_children_pct",
-  "health_ins_dependency_ratio",
-  "female_hh_with_children_pct",
-  "single_mother_household_pct",
-  "naive_child_poverty_pct",
-  "health_insurance_pct",
-  "deep_poverty_income_pct",
-  "income_lt10k_pct",
-  "lf_participation_pct",
-  "population_density",
-  "unemployment_pct",
-  "renter_occupied_pct",
-  "single_female_headed_family_pct",
-  "economic_distress_idx",
-  "income_25kto30k_pct",
-  "assistance_snap_pct",
-  "linguistic_isolation_pct",
-  "public_health_insurance_pct",
-  "median_home_value",
-  "income_60kto75k_pct",
-  "one_vehicle_available_pct",
-  "income_20kto25k_pct",
-  "income_15kto20k_pct",
-  "median_hh_income_sq",
-  "edu_less_than_hs_pct",
-  "concentrated_housing_burden",
-  "income_35kto40k_pct",
-  "income_30kto35k_pct",
-  "renter_cost_burden_20kto35k_pct",
-  "renter_cost_burden_lt20k_pct",
-  "no_vehicle_available_pct",
-  "owner_occupied_pct",
-  "renter_cost_burden_35kto50k_pct",
-  "three_or_more_vehicles_available_pct",
-  "housing_transit_insecurity",
-  "vacant_pct",
-  "median_household_income",
-  "single_male_headed_family_pct",
-  "disability_pct",
-  "married_couple_family_pct",
-  "two_vehicles_available_pct",
-  "income_50kto60k_pct",
-  "income_40kto45k_pct",
-  "income_45kto50k_pct",
-  "income_10kto15k_pct",
-  "male_hh_with_children_pct",
-  "under18_pct",
-  "renter_zero_neg_income_pct",
-  "year"
-)
-
-# model_data = model_data %>% select(c(ordered_predictors[1:5], "child_poverty_pct"))
-
 # --- 4.1 Model Setup ---
 
 set.seed(123) # for reproducibility
@@ -693,40 +651,9 @@ cv_control <- trainControl(
 )
 
 
-# --- 4.2 Random Forest (ranger) ---
-message("Training Random Forest model with ranger...")
-
-# Create a tuning grid for ranger.
-# A good rule of thumb for mtry is sqrt(number of predictors).
-# ncol(train_data) - 1 is the number of predictors.
-# ranger_grid <- expand.grid(
-#   mtry = round(c(
-#     sqrt(ncol(train_data) - 1),
-#     (ncol(train_data) - 1) / 2,
-#     (ncol(train_data) - 1) / 3
-#   )),
-#   splitrule = "variance", # Use "variance" for regression
-#   min.node.size = c(5, 10)
-# )
-# 
-# rf_model <- train(
-#   child_poverty_pct ~ .,
-#   data = train_data,
-#   method = "ranger",      # Use the fast 'ranger' implementation
-#   trControl = cv_control,
-#   tuneGrid = ranger_grid, # Use our custom tuning grid
-#   num.threads = parallel::detectCores() - 1, # Use multiple cores
-#   importance = "permutation" # A reliable way to measure variable importance
-# )
-# 
-# message("Random Forest (ranger) training complete.")
-# print(rf_model)
-
-
-# --- 4.3 Tuned XGBoost Model ---
+# --- 4.2 Tuned XGBoost Model ---
 message("Training a tuned XGBoost model...")
 
-# A more extensive grid to find better XGBoost parameters
 xgb_grid <- expand.grid(
   nrounds = c(100, 200),
   max_depth = c(4, 6, 8),
@@ -737,27 +664,27 @@ xgb_grid <- expand.grid(
   subsample = 0.8
 )
 
-xgb_model_tuned <- train(
-  child_poverty_pct ~ .,
-  data = train_data,
-  method = "xgbTree",
-  trControl = cv_control,
-  tuneGrid = xgb_grid,
-  verbose = FALSE
-)
+if(!file.exists("output/xgb_model.RData")){
+  xgb_model_tuned <- train(
+    child_poverty_pct ~ .,
+    data = train_data,
+    method = "xgbTree",
+    trControl = cv_control,
+    tuneGrid = xgb_grid,
+    verbose = FALSE
+  )
+  save(xgb_model_tuned, file="output/xgb_model.RData")
+}else{
+  load("output/xgb_model.RData")
+}
 
 message("Tuned XGBoost training complete.")
 print(xgb_model_tuned)
 
 
-# --- 4.4 Evaluate Final Model on Test Data ---
+# --- 4.3 Evaluate  Model on Test Data ---
 
-# final_model <- rf_model 
-final_model <- xgb_model_tuned
-predictions <- predict(final_model, test_data)
-# xgb_preds <- predict(xgb_model_tuned, test_data)
-# rf_preds <- predict(rf_model, test_data)
-# predictions <- (xgb_preds + rf_preds) / 2 # Ensemble
+predictions <- predict(xgb_model_tuned, test_data)
 
 # Clip predictions to be between 0 and 1
 predictions[predictions < 0] <- 0
@@ -766,11 +693,11 @@ predictions[predictions > 1] <- 1
 rmse_test <- RMSE(predictions, test_data$child_poverty_pct)
 r2_test <- R2(predictions, test_data$child_poverty_pct)
 
-message(paste("Final Model (", final_model$method, ") RMSE on test data:", round(rmse_test, 4)))
-message(paste("Final Model (", final_model$method, ") R-squared on test data:", round(r2_test, 4)))
+message(paste("RMSE on test data:", round(rmse_test, 4)))
+message(paste("R-squared on test data:", round(r2_test, 4)))
 
-# Variable importance plot for the final model
-importance <- varImp(final_model, scale = TRUE)
+# Variable importance plot for the model
+importance <- varImp(xgb_model_tuned, scale = TRUE)
 print(importance)
 plot(importance, top = 20)
 
@@ -789,23 +716,51 @@ x_vars <- train_data %>% select(-child_poverty_pct)
 y_var <- train_data$child_poverty_pct
 
 # Run the RFE algorithm
-# test models with 5, 10, 15, 20, and 25 variables.
+# test models with 5, 10, 15, 20, 25 and 30 variables.
 set.seed(123)
-feature_selection <- rfe(
-  x = x_vars,
-  y = y_var,
-  sizes = c(5, 10, 15, 20, 25, 30),
-  rfeControl = rfe_control
-)
+if(!file.exists("output/feature_selection.RData")){
+  feature_selection <- rfe(
+    x = x_vars,
+    y = y_var,
+    sizes = c(5, 10, 15, 20, 25, 30),
+    rfeControl = rfe_control
+  )
+  save(feature_selection, file="output/feature_selection.RData")
+}else{
+  load("output/feature_selection.RData")
+}
+
 
 # Print the results
 print(feature_selection)
 
 # List the optimal predictors
-predictors(feature_selection)
+optimal_predictors = predictors(feature_selection)
 
 # Plot the results
 plot(feature_selection, type = c("g", "o"))
+
+# Test parsimonious model
+max_predictors = 20
+train_data = train_data %>% select(c("child_poverty_pct",optimal_predictors[1:max_predictors]))
+p_xgb_model_tuned <- train(
+  child_poverty_pct ~ .,
+  data = train_data,
+  method = "xgbTree",
+  trControl = cv_control,
+  tuneGrid = xgb_grid,
+  verbose = FALSE
+)
+p_predictions <- predict(p_xgb_model_tuned, test_data)
+
+p_predictions[p_predictions < 0] <- 0
+p_predictions[p_predictions > 1] <- 1
+
+rmse_test <- RMSE(p_predictions, test_data$child_poverty_pct)
+r2_test <- R2(p_predictions, test_data$child_poverty_pct)
+
+message(paste("RMSE on test data:", round(rmse_test, 4)))
+message(paste("R-squared on test data:", round(r2_test, 4)))
 
 
 #-----------------------------------------------------------------------------#
@@ -835,7 +790,7 @@ load("input/cross_data.RData")
 full_2023_data <- all_years_data %>% filter(year==2023) %>% na.omit()
 
 # Make predictions
-full_2023_data$xgb_pred <- predict(final_model, full_2023_data)
+full_2023_data$xgb_pred <- predict(p_xgb_model_tuned, full_2023_data)
 full_2023_data$xgb_pred[which(full_2023_data$xgb_pred < 0)] <- 0
 full_2023_data$xgb_pred[which(full_2023_data$xgb_pred > 1)] <- 1
 
@@ -917,3 +872,6 @@ p3 <- ggplot(baltimore_tracts) +
 
 sum(baltimore_tracts$child_poverty_pct == 0)
 sum(baltimore_tracts$xgb_pred == 0)
+
+sum(baltimore_tracts$child_poverty_pct >= 0.3)
+sum(baltimore_tracts$xgb_pred >= 0.3)
