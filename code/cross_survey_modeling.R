@@ -762,6 +762,28 @@ r2_test <- R2(p_predictions, test_data$child_poverty_pct)
 message(paste("RMSE on test data:", round(rmse_test, 4)))
 message(paste("R-squared on test data:", round(r2_test, 4)))
 
+# Explainability test
+
+explainable_features <- data.frame(all_years_data) %>%
+  select(
+    child_poverty_pct,
+    total_poverty_pct,
+    unemployment_pct,
+    edu_less_than_hs_pct,
+    single_female_headed_family_pct,
+    assistance_snap_pct
+  ) %>%
+  na.omit()
+
+explainable_features_scaled <- explainable_features
+explainable_features_scaled[, -1] <- scale(explainable_features_scaled[, -1]) # Don't scale the outcome DV
+
+linear_model <- lm(child_poverty_pct ~ ., data = explainable_features_scaled)
+
+model_summary <- summary(linear_model)
+
+print(model_summary)
+
 
 #-----------------------------------------------------------------------------#
 # 5. SPATIAL SMOOTHING OF PREDICTIONS (EXAMPLE ON 2023 DATA)
