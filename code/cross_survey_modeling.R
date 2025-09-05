@@ -3,7 +3,7 @@
 #
 # This script builds a model to estimate child poverty rates at the census
 # tract level in Maryland. It uses ACS 5-year data for 2012-2023, trains
-# an XGBoost model, and applies spatial smoothing to the results, following
+# an XGBoost model, and applies spatial smoothing to the results, inspired by
 # the methods described in the SEHSD Working Paper on cross-survey modeling.
 # https://www2.census.gov/library/working-papers/2025/demo/sehsd-wp2025-05.pdf
 #-----------------------------------------------------------------------------#
@@ -16,7 +16,7 @@ nad83_maryland_epsg <- 26985
 list.of.packages <- c(
   "data.table", "tidycensus", "sf", "dplyr", "ggplot2", "scales",
   "dotenv", "stringr", "httr", "xgboost", "caret", "spdep", "spatialreg",
-  "patchwork"
+  "patchwork", "units", "ranger"
 )
 new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[, "Package"])]
 if (length(new.packages)) install.packages(new.packages)
@@ -455,7 +455,7 @@ get_yearly_data <- function(year) {
   acs5_wide[, married_with_children_pct := B11003_003 / B11003_002]
   acs5_wide[, male_hh_with_children_pct := B11003_010 / B11003_009]
   acs5_wide[, female_hh_with_children_pct := B11003_016 / B11003_015]
-  
+  acs5_wide[, single_mother_household_pct := B11003_016 / B11003_001]
   
   # --- Re-calculate Income Thresholds as Percentages ---
   
@@ -467,7 +467,6 @@ get_yearly_data <- function(year) {
   for (var in income_vars) {
     acs5_wide[, (var) := .SD[[var]] / B19001_001, .SDcols = var]
   }
-  
   
   # --- Clean Up and Rename Columns ---
   
@@ -525,7 +524,9 @@ get_yearly_data <- function(year) {
     ),
     table_type="subject"
   )
+  s0101[is.na(s0101)] = 0 # Replace NA under_18_pct (which occurs at 0 pop) with 0
   s0101$under18_pct = (s0101$under18_pop / s0101$total_population)
+  s0101$under18_pct[which(is.nan(s0101$under18_pct))] = 0
   
   data = merge(
     dp02, dp03, by="GEOID", all=T
@@ -546,8 +547,36 @@ get_yearly_data <- function(year) {
   )
   
   data$year = year
+  zerom2 = set_units(0, m^2)
+  # Remove zero area and zero population
+  data = subset(data, area > zerom2)
+  data = subset(data, total_population > 0)
   data$population_density = data$total_population / data$area
   data[,c("area", "total_population", "under18_pop")] = NULL
+  
+  # Engineered features
+  data = data.table(data)
+  
+  # Extreme poverty times assistance
+  data[, economic_distress_idx := income_lt10k_pct * assistance_snap_pct]
+  
+  # Tenancy times vehicle ownership
+  data[, housing_transit_insecurity := renter_occupied_pct * no_vehicle_available_pct]
+  
+  # Combine lowest two income brackets
+  data[, deep_poverty_income_pct := income_lt10k_pct + income_10kto15k_pct]
+
+  # Naive child poverty
+  data[,naive_child_poverty_pct := total_poverty_pct * under18_pct]
+  
+  # We focus on the two lowest income brackets for renters, as they are most at risk
+  data[, concentrated_housing_burden := renter_occupied_pct * (renter_cost_burden_lt20k_pct + renter_cost_burden_20kto35k_pct)]
+  
+  # Add a polynomial feature for a key variable
+  data[, median_hh_income_sq := median_household_income^2]
+  
+  # Public to private health insurance ratio, add a small constant to avoid division by zero
+  data[, health_ins_dependency_ratio := public_health_insurance_pct / (private_health_insurance_pct + 0.01)]
   
   return(data)
 }
@@ -555,6 +584,14 @@ get_yearly_data <- function(year) {
 # Loop through the years 2012-2023 and bind the data together.
 if(!file.exists("input/cross_data.RData")){
   all_years_data <- do.call(rbind, lapply(2012:2023, get_yearly_data))
+  
+  # Replace IV NAs with median values
+  for (j in names(all_years_data)) {
+    if(!j %in% c("child_poverty_pct", "GEOID")){
+      set(all_years_data, which(is.na(all_years_data[[j]])), j, median(all_years_data[[j]], na.rm=T))
+    }
+  }
+  
   save(all_years_data, file="input/cross_data.RData")
 }else{
   load("input/cross_data.RData")
@@ -570,19 +607,77 @@ glimpse(all_years_data)
 # 3. DATA PREPARATION
 #-----------------------------------------------------------------------------#
 
-# Create the final modeling dataset by removing unreliable estimates and NAs
+# Create the final modeling dataset by removing NAs and adding 'year' as a predictor
 model_data <- all_years_data %>%
-  select(-GEOID, -child_poverty_moe, -year) %>% # Remove non-predictor columns
+  select(-GEOID, -child_poverty_moe) %>% # Keep 'year' as a predictor
   na.omit()
+
 
 message(paste("Final dataset for modeling contains", nrow(model_data), "observations."))
 
 
 #-----------------------------------------------------------------------------#
-# 4. XGBOOST MODEL TRAINING AND EVALUATION
+# 4. MODEL TRAINING AND EVALUATION (REVISED)
 #-----------------------------------------------------------------------------#
 
-# Set up for modeling
+ordered_predictors = c(
+  "total_poverty_pct",
+  "private_health_insurance_pct",
+  "married_with_children_pct",
+  "health_ins_dependency_ratio",
+  "female_hh_with_children_pct",
+  "single_mother_household_pct",
+  "naive_child_poverty_pct",
+  "health_insurance_pct",
+  "deep_poverty_income_pct",
+  "income_lt10k_pct",
+  "lf_participation_pct",
+  "population_density",
+  "unemployment_pct",
+  "renter_occupied_pct",
+  "single_female_headed_family_pct",
+  "economic_distress_idx",
+  "income_25kto30k_pct",
+  "assistance_snap_pct",
+  "linguistic_isolation_pct",
+  "public_health_insurance_pct",
+  "median_home_value",
+  "income_60kto75k_pct",
+  "one_vehicle_available_pct",
+  "income_20kto25k_pct",
+  "income_15kto20k_pct",
+  "median_hh_income_sq",
+  "edu_less_than_hs_pct",
+  "concentrated_housing_burden",
+  "income_35kto40k_pct",
+  "income_30kto35k_pct",
+  "renter_cost_burden_20kto35k_pct",
+  "renter_cost_burden_lt20k_pct",
+  "no_vehicle_available_pct",
+  "owner_occupied_pct",
+  "renter_cost_burden_35kto50k_pct",
+  "three_or_more_vehicles_available_pct",
+  "housing_transit_insecurity",
+  "vacant_pct",
+  "median_household_income",
+  "single_male_headed_family_pct",
+  "disability_pct",
+  "married_couple_family_pct",
+  "two_vehicles_available_pct",
+  "income_50kto60k_pct",
+  "income_40kto45k_pct",
+  "income_45kto50k_pct",
+  "income_10kto15k_pct",
+  "male_hh_with_children_pct",
+  "under18_pct",
+  "renter_zero_neg_income_pct",
+  "year"
+)
+
+# model_data = model_data %>% select(c(ordered_predictors[1:5], "child_poverty_pct"))
+
+# --- 4.1 Model Setup ---
+
 set.seed(123) # for reproducibility
 
 # Split data into training (80%) and testing (20%) sets
@@ -591,43 +686,127 @@ train_data <- model_data[train_index, ]
 test_data <- model_data[-train_index, ]
 
 # Define the cross-validation method (5-fold CV)
-# This retrains the model on different "folds" of the data to get a
-# robust performance estimate.
 cv_control <- trainControl(
   method = "cv",
-  number = 5
+  number = 5,
+  verboseIter = TRUE # See progress
 )
 
-# Train the XGBoost model
-message("Training XGBoost model with 5-fold cross-validation...")
 
-xgb_model <- train(
+# --- 4.2 Random Forest (ranger) ---
+message("Training Random Forest model with ranger...")
+
+# Create a tuning grid for ranger.
+# A good rule of thumb for mtry is sqrt(number of predictors).
+# ncol(train_data) - 1 is the number of predictors.
+# ranger_grid <- expand.grid(
+#   mtry = round(c(
+#     sqrt(ncol(train_data) - 1),
+#     (ncol(train_data) - 1) / 2,
+#     (ncol(train_data) - 1) / 3
+#   )),
+#   splitrule = "variance", # Use "variance" for regression
+#   min.node.size = c(5, 10)
+# )
+# 
+# rf_model <- train(
+#   child_poverty_pct ~ .,
+#   data = train_data,
+#   method = "ranger",      # Use the fast 'ranger' implementation
+#   trControl = cv_control,
+#   tuneGrid = ranger_grid, # Use our custom tuning grid
+#   num.threads = parallel::detectCores() - 1, # Use multiple cores
+#   importance = "permutation" # A reliable way to measure variable importance
+# )
+# 
+# message("Random Forest (ranger) training complete.")
+# print(rf_model)
+
+
+# --- 4.3 Tuned XGBoost Model ---
+message("Training a tuned XGBoost model...")
+
+# A more extensive grid to find better XGBoost parameters
+xgb_grid <- expand.grid(
+  nrounds = c(100, 200),
+  max_depth = c(4, 6, 8),
+  eta = c(0.05, 0.1),
+  gamma = 0,
+  colsample_bytree = 0.8,
+  min_child_weight = 1,
+  subsample = 0.8
+)
+
+xgb_model_tuned <- train(
   child_poverty_pct ~ .,
   data = train_data,
   method = "xgbTree",
   trControl = cv_control,
-  verbose = F
+  tuneGrid = xgb_grid,
+  verbose = FALSE
 )
 
-# Print the cross-validation results (RMSE is the key metric)
-message("Cross-validation results:")
-print(xgb_model)
+message("Tuned XGBoost training complete.")
+print(xgb_model_tuned)
 
-# Evaluate the final model on the held-out test data
-predictions <- predict(xgb_model, test_data)
+
+# --- 4.4 Evaluate Final Model on Test Data ---
+
+# final_model <- rf_model 
+final_model <- xgb_model_tuned
+predictions <- predict(final_model, test_data)
+# xgb_preds <- predict(xgb_model_tuned, test_data)
+# rf_preds <- predict(rf_model, test_data)
+# predictions <- (xgb_preds + rf_preds) / 2 # Ensemble
+
+# Clip predictions to be between 0 and 1
+predictions[predictions < 0] <- 0
+predictions[predictions > 1] <- 1
+
 rmse_test <- RMSE(predictions, test_data$child_poverty_pct)
 r2_test <- R2(predictions, test_data$child_poverty_pct)
 
-message(paste("Final Model RMSE on reserved test data:", round(rmse_test, 4)))
-message(paste("Final Model R2 on reserved test data:", round(r2_test, 4)))
+message(paste("Final Model (", final_model$method, ") RMSE on test data:", round(rmse_test, 4)))
+message(paste("Final Model (", final_model$method, ") R-squared on test data:", round(r2_test, 4)))
 
-importance <- varImp(xgb_model, scale = TRUE)
-
-# Print the ranked list of variables
+# Variable importance plot for the final model
+importance <- varImp(final_model, scale = TRUE)
 print(importance)
-
-# Plot the top 20 most important variables
 plot(importance, top = 20)
+
+# --- 5. Build a Parsimonious Model with RFE ---
+
+# Random forest functions since they are fast at ranking features.
+rfe_control <- rfeControl(
+  functions = rfFuncs, # Functions to use for ranking
+  method = "cv",       # Cross-validation
+  number = 5,          # 5 folds
+  verbose = TRUE
+)
+
+# Define the feature set (X) and the outcome (Y)
+x_vars <- train_data %>% select(-child_poverty_pct)
+y_var <- train_data$child_poverty_pct
+
+# Run the RFE algorithm
+# test models with 5, 10, 15, 20, and 25 variables.
+set.seed(123)
+feature_selection <- rfe(
+  x = x_vars,
+  y = y_var,
+  sizes = c(5, 10, 15, 20, 25, 30),
+  rfeControl = rfe_control
+)
+
+# Print the results
+print(feature_selection)
+
+# List the optimal predictors
+predictors(feature_selection)
+
+# Plot the results
+plot(feature_selection, type = c("g", "o"))
+
 
 #-----------------------------------------------------------------------------#
 # 5. SPATIAL SMOOTHING OF PREDICTIONS (EXAMPLE ON 2023 DATA)
@@ -656,7 +835,9 @@ load("input/cross_data.RData")
 full_2023_data <- all_years_data %>% filter(year==2023) %>% na.omit()
 
 # Make predictions
-full_2023_data$xgb_pred <- predict(xgb_model, full_2023_data)
+full_2023_data$xgb_pred <- predict(final_model, full_2023_data)
+full_2023_data$xgb_pred[which(full_2023_data$xgb_pred < 0)] <- 0
+full_2023_data$xgb_pred[which(full_2023_data$xgb_pred > 1)] <- 1
 
 # Join predictions to the spatial data
 md_tracts_2023_sf <- md_tracts_2023_sf %>%
@@ -664,7 +845,7 @@ md_tracts_2023_sf <- md_tracts_2023_sf %>%
   rename(population = estimate) %>%
   filter(!is.na(xgb_pred)) # Ensure we only model tracts with predictions
 
-# Step 5.3: Create spatial weights matrix (REVISED)
+# Step 5.3: Create spatial weights matrix
 # Using Queen contiguity for a more natural definition of neighbors
 nb_weights <- poly2nb(md_tracts_2023_sf, queen = TRUE)
 list_weights <- nb2listw(nb_weights, style = "W")
@@ -733,3 +914,6 @@ p3 <- ggplot(baltimore_tracts) +
   theme_void()
 
 (p1 | p2 | p3)
+
+sum(baltimore_tracts$child_poverty_pct == 0)
+sum(baltimore_tracts$xgb_pred == 0)
