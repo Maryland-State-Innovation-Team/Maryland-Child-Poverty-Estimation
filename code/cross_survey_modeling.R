@@ -30,6 +30,8 @@ load_dot_env()
 api_key <- Sys.getenv("CENSUS_API_KEY")
 census_api_key(api_key, install = TRUE, overwrite = TRUE)
 
+source("code/util_saipe.R")
+
 
 #-----------------------------------------------------------------------------#
 # 2. DATA ACQUISITION: DOWNLOAD AND PROCESS ACS DATA (2012-2023)
@@ -37,7 +39,12 @@ census_api_key(api_key, install = TRUE, overwrite = TRUE)
 
 
 # Function for data profiles
-get_precomp = function(year, profile, variables, table_type="profile"){
+get_precomp = function(year, profile, variables, table_type="profile", geography="tract"){
+  if(geography=="tract"){
+    ucgid="pseudo(0400000US24$1400000)"
+  }else{
+    ucgid="pseudo(0400000US24$0500000)" # County
+  }
   dp_url = paste0(
     "https://api.census.gov/data/",
     year,
@@ -45,7 +52,8 @@ get_precomp = function(year, profile, variables, table_type="profile"){
     table_type,
     "?get=group(",
     profile,
-    ")&ucgid=pseudo(0400000US24$1400000)"
+    ")&ucgid=",
+    ucgid
   )
   dp_req = GET(dp_url)
   dp_content = content(dp_req)
@@ -58,7 +66,12 @@ get_precomp = function(year, profile, variables, table_type="profile"){
   dp = as.data.frame(lapply(dp, unlist))
   names(dp) = dp[1,]
   dp = dp[2:nrow(dp),]
-  dp$GEOID = gsub("1400000US", "", dp$GEO_ID)
+  if(geography=="tract"){
+    dp$GEOID = gsub("1400000US", "", dp$GEO_ID)
+  }else if(geography=="county"){
+    dp$GEOID = gsub("0500000US", "", dp$GEO_ID)
+  }
+  
   for(variable in variables){
     dp[,variable] = as.numeric(dp[,variable])
     dp[which(dp[,variable] < 0),variable] = NA
@@ -552,8 +565,20 @@ get_yearly_data <- function(year) {
   data = subset(data, area > zerom2)
   data = subset(data, total_population > 0)
   data$population_density = data$total_population / data$area
-  data[,c("area", "total_population", "under18_pop")] = NULL
   
+  # SAIPE join
+  saipe = get_saipe(year, api_key)
+  saipe$county_geoid = paste0(saipe$state, saipe$county)
+  saipe = saipe[,c(
+    "county_geoid",
+    "SAEPOVRT0_17_PT",
+    "SAEPOVRTALL_PT"
+  )]
+  saipe$SAEPOVRT0_17_PT = as.numeric(saipe$SAEPOVRT0_17_PT) / 100
+  saipe$SAEPOVRTALL_PT = as.numeric(saipe$SAEPOVRTALL_PT) / 100
+  data$county_geoid = substr(data$GEOID, 1, 5)
+  data = merge(data, saipe, by="county_geoid", all.x=T)
+
   # Replace IV NAs with median values
   for (j in names(data)) {
     if(!j %in% c("child_poverty_pct", "GEOID")){
@@ -599,6 +624,42 @@ get_yearly_data <- function(year) {
   
   # Create an index for compounding workforce challenges
   data[, workforce_challenge_idx := unemployment_pct * edu_less_than_hs_pct]
+  
+  # SAIPE engineered features
+  
+  # Calculate the weighted mean of tract-level poverty for each county
+  county_level_acs_pov = get_precomp(
+    year, 
+    "DP03",
+    dp03_variables[[as.character(year)]],
+    geography="county"
+  )
+  setnames(
+    county_level_acs_pov,
+    c("GEOID", "total_poverty_pct"),
+    c("county_geoid", "county_acs_pov")
+  )
+  county_level_acs_pov$county_acs_pov = as.numeric(
+    county_level_acs_pov$county_acs_pov
+  ) / 100
+  county_level_acs_pov = county_level_acs_pov[,c("county_geoid", "county_acs_pov")]
+  
+  # Step 3: Merge this aggregated county data back to the main tract-level dataset
+  data <- merge(data, county_level_acs_pov, by = "county_geoid", all.x = TRUE)
+  
+  # Step 4: Now, create features based on the discrepancy between SAIPE and aggregated ACS
+  # This is the "County Correction Factor"
+  data[, saipe_acs_county_diff := SAEPOVRTALL_PT - county_acs_pov]
+  data[, saipe_acs_county_ratio := SAEPOVRTALL_PT / (county_acs_pov + 0.01)]
+  
+  data[, saipe_all_child_diff := SAEPOVRTALL_PT - SAEPOVRT0_17_PT]
+  data[, saipe_all_child_ratio := SAEPOVRTALL_PT / (SAEPOVRT0_17_PT + 0.01)]
+
+  data[, saipe_add_child_pov_pct := total_poverty_pct - (saipe_all_child_diff + saipe_acs_county_diff)]
+  data[, saipe_mult_child_pov_pct := (total_poverty_pct / saipe_all_child_ratio) * saipe_acs_county_ratio]
+  
+  # Remove these, no longer needed and pops in case they could cause overfitting
+  data[,c("county_geoid","area","total_population", "under18_pop")] = NULL
   
   return(data)
 }
@@ -716,13 +777,13 @@ x_vars <- train_data %>% select(-child_poverty_pct)
 y_var <- train_data$child_poverty_pct
 
 # Run the RFE algorithm
-# test models with 5, 10, 15, 20, 25 and 30 variables.
+# test models with 5, 15 and 30 variables.
 set.seed(123)
 if(!file.exists("output/feature_selection.RData")){
   feature_selection <- rfe(
     x = x_vars,
     y = y_var,
-    sizes = c(5, 10, 15, 20, 25, 30),
+    sizes = c(5, 15, 30),
     rfeControl = rfe_control
   )
   save(feature_selection, file="output/feature_selection.RData")
@@ -741,7 +802,7 @@ optimal_predictors = predictors(feature_selection)
 plot(feature_selection, type = c("g", "o"))
 
 # Test parsimonious model
-max_predictors = 20
+max_predictors = 15
 train_data = train_data %>% select(c("child_poverty_pct",optimal_predictors[1:max_predictors]))
 p_xgb_model_tuned <- train(
   child_poverty_pct ~ .,
@@ -768,10 +829,10 @@ explainable_features <- data.frame(all_years_data) %>%
   select(
     child_poverty_pct,
     total_poverty_pct,
-    unemployment_pct,
-    edu_less_than_hs_pct,
-    single_female_headed_family_pct,
-    assistance_snap_pct
+    private_health_insurance_pct,
+    married_with_children_pct,
+    female_hh_with_children_pct,
+    lf_participation_pct
   ) %>%
   na.omit()
 
