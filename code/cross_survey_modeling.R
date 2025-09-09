@@ -952,6 +952,7 @@ p3 <- ggplot(baltimore_tracts) +
   theme_void()
 
 (p1 | p2 | p3)
+ggsave("output/baltimore_maps.png",height=5, width=10)
 
 sum(baltimore_tracts$child_poverty_pct == 0)
 sum(baltimore_tracts$xgb_pred == 0)
